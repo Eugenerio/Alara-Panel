@@ -41,14 +41,15 @@ export async function getFilteredUsers() {
     console.log('Current user:', currentUser);
     
     try {
-        let query = supabase.from('end_users').select('*');
+        // get all users
+        let usersQuery = supabase.from('end_users').select('*');
         
-        // Якщо користувач не alara_admin, фільтруємо по client_id
+        // If the user is not alara_admin, filter by client_id
         if (!canViewAllUsers(currentUser)) {
             const clientId = getClientIdForFiltering(currentUser);
             
             if (clientId) {
-                query = query.eq('client_id', clientId);
+                usersQuery = usersQuery.eq('client_id', clientId);
                 console.log(`Filtering users by client_id: ${clientId}`);
             } else {
                 console.warn('No client_id found for filtering, returning empty array');
@@ -58,15 +59,81 @@ export async function getFilteredUsers() {
             console.log('Super admin access - showing all users');
         }
         
-        const { data, error } = await query.order('created_at', { ascending: false });
+        const { data: users, error: usersError } = await usersQuery;
         
-        if (error) {
-            console.error('Error fetching users:', error);
-            throw error;
+        if (usersError) {
+            console.error('Error fetching users:', usersError);
+            throw usersError;
         }
         
-        console.log(`Fetched ${data?.length || 0} users`);
-        return data || [];
+        if (!users || users.length === 0) {
+            console.log('No users found');
+            return [];
+        }
+        
+        // get last message time for all users in one query
+        const userIds = users.map(user => user.id);
+        console.log(`Fetching last message times for ${userIds.length} users`);
+        
+        // use aggregate query to get MAX(time) for each end_user_id
+        const { data: messagesData, error: messagesError } = await supabase
+            .from('messages')
+            .select('end_user_id, time')
+            .in('end_user_id', userIds)
+            .order('end_user_id')
+            .order('time', { ascending: false });
+        
+        if (messagesError) {
+            console.error('Error fetching messages:', messagesError);
+            // continue without message times, but with a warning
+            console.warn('Continuing without message times due to error');
+        }
+        
+        // create a map of last messages (only the first message for each user through ORDER BY)
+        const lastMessageMap = new Map();
+        if (messagesData) {
+            messagesData.forEach(msg => {
+                if (!lastMessageMap.has(msg.end_user_id)) {
+                    lastMessageMap.set(msg.end_user_id, new Date(msg.time));
+                }
+            });
+        }
+        
+        // process users with last message time
+        const processedUsers = users.map(user => ({
+            ...user,
+            lastMessageTime: lastMessageMap.get(user.id) || null
+        }));
+        
+        // sort users by priority:
+        // 1. Human Required users at the top, sorted by last message time
+        // 2. Other users at the bottom, sorted by last message time
+        const sortedUsers = processedUsers.sort((a, b) => {
+            const aHumanRequired = a.human_required === true;
+            const bHumanRequired = b.human_required === true;
+            
+            // Human Required users always at the top
+            if (aHumanRequired && !bHumanRequired) return -1;
+            if (!aHumanRequired && bHumanRequired) return 1;
+            
+            // sort users in the group by last message time (newer first)
+            if (a.lastMessageTime && b.lastMessageTime) {
+                return b.lastMessageTime.getTime() - a.lastMessageTime.getTime();
+            }
+            
+            // users with messages have priority over those without
+            if (a.lastMessageTime && !b.lastMessageTime) return -1;
+            if (!a.lastMessageTime && b.lastMessageTime) return 1;
+            
+            // if there are no messages in both, sort by creation date
+            return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+        });
+        
+        console.log(`Fetched ${sortedUsers.length} users with last message times using optimized query`);
+        console.log(`Users with messages: ${sortedUsers.filter(u => u.lastMessageTime).length}`);
+        console.log(`Human required users: ${sortedUsers.filter(u => u.human_required).length}`);
+        
+        return sortedUsers;
         
     } catch (error) {
         console.error('Error in getFilteredUsers:', error);
