@@ -13,7 +13,7 @@ export default defineConfig({
             'localhost',
             '.ngrok-free.app',
             '.ngrok.io',
-            '80d6cea75a6a.ngrok-free.app'
+            'b733509dab21.ngrok-free.app'
         ]
     }
 });

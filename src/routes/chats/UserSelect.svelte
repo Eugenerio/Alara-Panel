@@ -219,25 +219,25 @@
             const aStatus = getUserStatus(a);
             const bStatus = getUserStatus(b);
 
-            // НАЙВИЩИЙ ПРІОРИТЕТ: Users з human_required статусом завжди першими
+            // HIGHEST PRIORITY: Users with human_required status always first
             const aHumanRequired = aStatus === "human-required";
             const bHumanRequired = bStatus === "human-required";
 
             if (aHumanRequired && !bHumanRequired) return -1;
             if (!aHumanRequired && bHumanRequired) return 1;
 
-            // Внутри каждой группы (Human Required / обычные):
-            // 1. Пользователи с непрочитанными сообщениями вверху
+            // Inside each group (Human Required / regular):
+            // 1. Users with unread messages at the top
             if (aUnread > 0 && bUnread === 0) return -1;
             if (bUnread > 0 && aUnread === 0) return 1;
 
-            // 2. Среди пользователей с непрочитанными - по количеству (больше = выше)
+            // 2. Among users with unread messages - by count (more = higher)
             if (aUnread > 0 && bUnread > 0) {
                 return bUnread - aUnread;
             }
 
-            // 3. Потім по часу останнього повідомлення (новіші вгорі)
-            // Приоритет отдаем обновленному времени из WebSocket, если оно есть
+            // 3. Then by last message time (newer at the top)
+            // Priority given to the updated time from WebSocket, if it exists
             const aTime = lastMessageTimes[a.id] || a.lastMessageTime;
             const bTime = lastMessageTimes[b.id] || b.lastMessageTime;
 
@@ -247,7 +247,7 @@
             if (aTime && !bTime) return -1;
             if (!aTime && bTime) return 1;
 
-            // 4. Если все остальное равно, сортируем по имени
+            // 4. If everything else is equal, sort by name
             const aName = a.nickname || a.name || a.username || "";
             const bName = b.nickname || b.name || b.username || "";
             return aName.localeCompare(bName);

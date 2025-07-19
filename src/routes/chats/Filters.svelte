@@ -20,7 +20,6 @@
     let selectedUserId: string | null = null;
     let userSelectRef: UserSelect;
 
-
     let unreadMessages: Record<string, number> = {};
     let lastMessageTimes: Record<string, Date> = {};
 
@@ -53,7 +52,6 @@
 
     function initializeWebSocket() {
         try {
-          
             websocket = new WebSocket("ws://your-websocket-url");
 
             websocket.onopen = () => {
@@ -71,7 +69,7 @@
 
             websocket.onclose = () => {
                 console.log("WebSocket disconnected");
-               
+
                 setTimeout(() => {
                     initializeWebSocket();
                 }, 5000);
@@ -107,7 +105,6 @@
             ? new Date(messageTime)
             : new Date();
 
-      
         if (userSelectRef) {
             userSelectRef.updateUnreadMessages(
                 userId,
@@ -116,7 +113,6 @@
             );
         }
 
-      
         saveUnreadMessagesToStorage();
 
         console.log(
@@ -237,11 +233,9 @@
     function handleUserSelect(user: User): void {
         console.log("Вибрано користувача:", user);
 
-       
         if (unreadMessages[user.id] > 0) {
             handleMessagesRead(user.id);
 
-           
             if (websocket && websocket.readyState === WebSocket.OPEN) {
                 websocket.send(
                     JSON.stringify({
@@ -256,20 +250,17 @@
         onUserSelect(user);
     }
 
-   
     $: if (clientId !== undefined && userSelectRef) {
         userSelectRef.refreshUsers();
     }
 
     $: activeFiltersCount = (activePlatform ? 1 : 0) + (activeStatus ? 1 : 0);
 
-    
     $: totalUnreadCount = Object.values(unreadMessages).reduce(
         (sum, count) => sum + count,
         0,
     );
 
-  
     export function addNewMessage(userId: string, messageTime?: Date) {
         handleNewMessage(userId, messageTime?.toISOString());
     }
@@ -286,7 +277,6 @@
         saveUnreadMessagesToStorage();
     }
 
-
     function simulateNewMessage() {
         const testUserId = "test-user-1";
         handleNewMessage(testUserId);
@@ -296,11 +286,9 @@
     let isSearchExpanded: boolean = false;
     let searchInputRef: HTMLInputElement;
 
-
     function toggleSearch() {
         isSearchExpanded = !isSearchExpanded;
         if (isSearchExpanded) {
-           
             setTimeout(() => {
                 searchInputRef?.focus();
             }, 300);
@@ -647,7 +635,7 @@
         margin: 0;
         letter-spacing: 0.5px;
     }
- 
+
     .search-container {
         display: flex;
         align-items: center;
@@ -778,6 +766,5 @@
             flex-wrap: wrap;
             gap: 4px;
         }
-
     }
 </style>
