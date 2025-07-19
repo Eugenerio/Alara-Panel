@@ -10,10 +10,13 @@ export interface User {
     chat_id?: string;
     role?: string;
     created_at?: string;
-    [key: string]: any; // для додаткових полів
+    last_message_at?: string; // New field from backend
+    alara_status?: boolean; // Status fields
+    human_required?: boolean;
+    [key: string]: any; // for additional fields
 
     unreadCount?: number;
-    lastMessageTime?: Date;
+    lastMessageTime?: Date | null;
 }
 
 // Додаємо тип для аутентифікованого користувача

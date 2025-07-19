@@ -18,11 +18,7 @@
     }
 
     interface UserWithMessages extends User {
-        unreadCount?: number;
-        lastMessageTime?: Date;
-        // Додаємо поля для статусів з бази даних
-        alara_status?: boolean;
-        human_required?: boolean;
+        // Interface extends User, all needed fields are already defined in the base type
     }
 
     export let selectedUserId: string | null = null;
@@ -121,11 +117,11 @@
         if (refreshInterval) {
             clearInterval(refreshInterval);
         }
-        // Змінено інтервал на 1 секунду для реального часу
+        // Increased interval to 5 seconds to reduce spam when API has issues
         refreshInterval = setInterval(() => {
             console.log("Auto-refreshing users...");
             loadUsers();
-        }, 1000); // 1 секунда замість 2 секунд
+        }, 5000); // 5 seconds to reduce API spam
     }
 
     function stopRefreshInterval() {
@@ -157,16 +153,25 @@
                 clientId,
             );
 
-            const loadedUsers = await getFilteredUsers(clientId);
+            const loadedUsers = await getFilteredUsers();
 
-            // Обробляємо користувачів та встановлюємо правильні статуси
+            // Process users and set correct statuses
             users = loadedUsers.map((user) => {
+                // Use last_message_at from API as the primary source of last message time
+                let lastMessageTime = null;
+                if ((user as any).last_message_at) {
+                    lastMessageTime = new Date((user as any).last_message_at);
+                } else if (lastMessageTimes[user.id]) {
+                    // Fallback to local cache if API didn't return time
+                    lastMessageTime = lastMessageTimes[user.id];
+                }
+
                 const userWithStatus = {
                     ...user,
                     unreadCount: unreadMessages[user.id] || 0,
-                    lastMessageTime: lastMessageTimes[user.id],
+                    lastMessageTime: lastMessageTime,
                 };
-                // Встановлюємо статус на основі полів з бази даних
+                // set status based on fields from the database
                 const calculatedStatus = getUserStatus(userWithStatus);
                 userWithStatus.status = calculatedStatus;
                 return userWithStatus;
@@ -205,7 +210,8 @@
         );
     }
 
-    // Оновлена функція сортування з пріоритетом для Human Required
+    // Simplified sorting function - API already returns correctly sorted users
+    // This function now only applies additional sorting by unread count within each group
     function sortUsers(users: UserWithMessages[]): UserWithMessages[] {
         return [...users].sort((a, b) => {
             const aUnread = a.unreadCount || 0;
@@ -213,63 +219,25 @@
             const aStatus = getUserStatus(a);
             const bStatus = getUserStatus(b);
 
-            // НАЙВИЩИЙ ПРІОРИТЕТ: Users з human_required статусом завжди першими
+            // Main sorting is already done on backend (Human Required -> last_message_at)
+            // Here we only add priority for unread messages within each group
+
+            // Check if users belong to the same group by human_required
             const aHumanRequired = aStatus === "human-required";
             const bHumanRequired = bStatus === "human-required";
 
-            if (aHumanRequired && !bHumanRequired) return -1;
-            if (!aHumanRequired && bHumanRequired) return 1;
-
-            // Якщо обидва мають human_required статус, сортуємо їх між собою
-            if (aHumanRequired && bHumanRequired) {
-                // Спочатку по кількості непрочитаних повідомлень
-                if (aUnread > 0 && bUnread === 0) return -1;
-                if (bUnread > 0 && aUnread === 0) return 1;
-                if (aUnread > 0 && bUnread > 0) {
-                    return bUnread - aUnread;
-                }
-
-                // Потім по часу останнього повідомлення
-                if (a.lastMessageTime && b.lastMessageTime) {
-                    return (
-                        b.lastMessageTime.getTime() -
-                        a.lastMessageTime.getTime()
-                    );
-                }
-                if (a.lastMessageTime && !b.lastMessageTime) return -1;
-                if (!a.lastMessageTime && b.lastMessageTime) return 1;
-
-                // Потім по імені
-                const aName = a.nickname || a.name || a.username || "";
-                const bName = b.nickname || b.name || b.username || "";
-                return aName.localeCompare(bName);
+            // If users belong to different groups, keep the order set by backend
+            if (aHumanRequired !== bHumanRequired) {
+                return 0; // Don't change the order set by backend
             }
 
-            // Для користувачів БЕЗ human_required статусу:
-            // Priority 2: Users with unread messages
-            if (aUnread > 0 && bUnread === 0) return -1;
-            if (bUnread > 0 && aUnread === 0) return 1;
-
-            // Priority 3: Among users with unread messages, sort by unread count (descending)
-            if (aUnread > 0 && bUnread > 0) {
-                return bUnread - aUnread;
+            // If users belong to the same group, sort by unread count
+            if (aUnread !== bUnread) {
+                return bUnread - aUnread; // More unread - higher
             }
 
-            // Priority 4: Sort by last message time (most recent first)
-            if (a.lastMessageTime && b.lastMessageTime) {
-                return (
-                    b.lastMessageTime.getTime() - a.lastMessageTime.getTime()
-                );
-            }
-
-            // Priority 5: Users with last message time come before those without
-            if (a.lastMessageTime && !b.lastMessageTime) return -1;
-            if (!a.lastMessageTime && b.lastMessageTime) return 1;
-
-            // Priority 6: Fallback to alphabetical sorting by name
-            const aName = a.nickname || a.name || a.username || "";
-            const bName = b.nickname || b.name || b.username || "";
-            return aName.localeCompare(bName);
+            // If unread count is the same, keep the order set by backend
+            return 0;
         });
     }
 
@@ -432,9 +400,7 @@
                         <div
                             class="human-required-indicator"
                             title="Human Required"
-                        >
-                            
-                        </div>
+                        ></div>
                     {/if}
                 </div>
                 <div class="text">

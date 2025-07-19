@@ -1,5 +1,6 @@
 import { supabase } from '../../lib/supabaseClient';
 import { getCurrentUser, canViewAllUsers, getClientIdForFiltering } from './userUtils';
+import { PUBLIC_WEB_SERVER } from '$env/static/public';
 
 /**
  * @typedef {Object} User
@@ -28,8 +29,8 @@ import { getCurrentUser, canViewAllUsers, getClientIdForFiltering } from './user
  */
 
 /**
- * Отримує користувачів з урахуванням ролі поточного користувача
- * @returns {Promise<User[]>} Масив користувачів
+ * Get users with respect to the current user's role
+ * @returns {Promise<User[]>} Array of users
  */
 export async function getFilteredUsers() {
     const currentUser = getCurrentUser();
@@ -39,6 +40,67 @@ export async function getFilteredUsers() {
     }
     
     console.log('Current user:', currentUser);
+    
+    try {
+        // Define client_id for filtering
+        let clientId = null;
+        
+        if (!canViewAllUsers(currentUser)) {
+            clientId = getClientIdForFiltering(currentUser);
+            
+            if (!clientId) {
+                console.warn('No client_id found for filtering, returning empty array');
+                return [];
+            }
+        }
+        
+        console.log(`Loading users via API for client_id: ${clientId}`);
+        
+        // Use new API endpoint instead of direct Supabase query
+        const response = await fetch(`${PUBLIC_WEB_SERVER}/users/${clientId}`, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+                'ngrok-skip-browser-warning': 'true'
+            }
+        });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        const result = await response.json();
+        const users = result.users || [];
+        
+        console.log(`Fetched ${users.length} users from API with sorting:`, result.sorting);
+        
+        // API just return them
+        return users;
+        
+    } catch (error) {
+        console.error('Error in getFilteredUsers:', error);
+        
+        // Fallback to Supabase direct query if API is not available    
+        console.log('API failed, falling back to Supabase direct query');
+        try {
+            return await getFilteredUsersFromSupabase();
+        } catch (fallbackError) {
+            console.error('Fallback to Supabase also failed:', fallbackError);
+            throw fallbackError;
+        }
+    }
+}
+
+/**
+ * Fallback функция для прямого запроса к Supabase
+ * @returns {Promise<User[]>} Масив користувачів
+ */
+async function getFilteredUsersFromSupabase() {
+    const currentUser = getCurrentUser();
+    
+    if (!currentUser) {
+        throw new Error('User not authenticated');
+    }
     
     try {
         let query = supabase.from('end_users').select('*');
@@ -65,11 +127,11 @@ export async function getFilteredUsers() {
             throw error;
         }
         
-        console.log(`Fetched ${data?.length || 0} users`);
+        console.log(`Fetched ${data?.length || 0} users from Supabase fallback`);
         return data || [];
         
     } catch (error) {
-        console.error('Error in getFilteredUsers:', error);
+        console.error('Error in getFilteredUsersFromSupabase:', error);
         throw error;
     }
 }
