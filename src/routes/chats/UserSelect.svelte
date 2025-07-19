@@ -157,14 +157,19 @@
                 clientId,
             );
 
-            const loadedUsers = await getFilteredUsers(clientId);
+            const loadedUsers = await getFilteredUsers();
 
             // Обробляємо користувачів та встановлюємо правильні статуси
             users = loadedUsers.map((user) => {
+                const userWithMessages = user as UserWithMessages;
                 const userWithStatus = {
-                    ...user,
-                    unreadCount: unreadMessages[user.id] || 0,
-                    lastMessageTime: lastMessageTimes[user.id],
+                    ...userWithMessages,
+                    unreadCount: unreadMessages[userWithMessages.id] || 0,
+                    // use lastMessageTime from database (priority),
+                    // and lastMessageTimes only if there is no time in the database
+                    lastMessageTime:
+                        userWithMessages.lastMessageTime ||
+                        lastMessageTimes[userWithMessages.id],
                 };
                 // Встановлюємо статус на основі полів з бази даних
                 const calculatedStatus = getUserStatus(userWithStatus);
@@ -205,7 +210,8 @@
         );
     }
 
-    // Оновлена функція сортування з пріоритетом для Human Required
+    // Simplified sorting function for real-time changes
+    // Main sorting now happens in getFilteredUsers
     function sortUsers(users: UserWithMessages[]): UserWithMessages[] {
         return [...users].sort((a, b) => {
             const aUnread = a.unreadCount || 0;
@@ -220,53 +226,28 @@
             if (aHumanRequired && !bHumanRequired) return -1;
             if (!aHumanRequired && bHumanRequired) return 1;
 
-            // Якщо обидва мають human_required статус, сортуємо їх між собою
-            if (aHumanRequired && bHumanRequired) {
-                // Спочатку по кількості непрочитаних повідомлень
-                if (aUnread > 0 && bUnread === 0) return -1;
-                if (bUnread > 0 && aUnread === 0) return 1;
-                if (aUnread > 0 && bUnread > 0) {
-                    return bUnread - aUnread;
-                }
-
-                // Потім по часу останнього повідомлення
-                if (a.lastMessageTime && b.lastMessageTime) {
-                    return (
-                        b.lastMessageTime.getTime() -
-                        a.lastMessageTime.getTime()
-                    );
-                }
-                if (a.lastMessageTime && !b.lastMessageTime) return -1;
-                if (!a.lastMessageTime && b.lastMessageTime) return 1;
-
-                // Потім по імені
-                const aName = a.nickname || a.name || a.username || "";
-                const bName = b.nickname || b.name || b.username || "";
-                return aName.localeCompare(bName);
-            }
-
-            // Для користувачів БЕЗ human_required статусу:
-            // Priority 2: Users with unread messages
+            // Внутри каждой группы (Human Required / обычные):
+            // 1. Пользователи с непрочитанными сообщениями вверху
             if (aUnread > 0 && bUnread === 0) return -1;
             if (bUnread > 0 && aUnread === 0) return 1;
 
-            // Priority 3: Among users with unread messages, sort by unread count (descending)
+            // 2. Среди пользователей с непрочитанными - по количеству (больше = выше)
             if (aUnread > 0 && bUnread > 0) {
                 return bUnread - aUnread;
             }
 
-            // Priority 4: Sort by last message time (most recent first)
-            if (a.lastMessageTime && b.lastMessageTime) {
-                return (
-                    b.lastMessageTime.getTime() - a.lastMessageTime.getTime()
-                );
+            // 3. Потім по часу останнього повідомлення (новіші вгорі)
+            // Приоритет отдаем обновленному времени из WebSocket, если оно есть
+            const aTime = lastMessageTimes[a.id] || a.lastMessageTime;
+            const bTime = lastMessageTimes[b.id] || b.lastMessageTime;
+
+            if (aTime && bTime) {
+                return bTime.getTime() - aTime.getTime();
             }
+            if (aTime && !bTime) return -1;
+            if (!aTime && bTime) return 1;
 
-            // Priority 5: Users with last message time come before those without
-            if (a.lastMessageTime && !b.lastMessageTime) return -1;
-            if (!a.lastMessageTime && b.lastMessageTime) return 1;
-
-            // Priority 6: Fallback to alphabetical sorting by name
+            // 4. Если все остальное равно, сортируем по имени
             const aName = a.nickname || a.name || a.username || "";
             const bName = b.nickname || b.name || b.username || "";
             return aName.localeCompare(bName);
@@ -432,9 +413,7 @@
                         <div
                             class="human-required-indicator"
                             title="Human Required"
-                        >
-                            
-                        </div>
+                        ></div>
                     {/if}
                 </div>
                 <div class="text">
