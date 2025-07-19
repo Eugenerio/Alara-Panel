@@ -11,7 +11,8 @@ export interface User {
     role?: string;
     created_at?: string;
     [key: string]: any; // для додаткових полів
-
+    alara_status?: boolean;
+    human_required?: boolean;
     unreadCount?: number;
     lastMessageTime?: Date;
 }
